@@ -1,8 +1,10 @@
 package gonmap
 
 import (
-	"golang.org/x/net/proxy"
 	"os"
+
+	"github.com/projectdiscovery/gologger"
+	"golang.org/x/net/proxy"
 )
 
 type Nmap struct {
@@ -46,6 +48,7 @@ func (n *Nmap) init() error {
 		}
 	}
 	n.setFallback(n.tcpProbes)
+	gologger.Debug().Msgf("Loaded %d tcp probes and %d udp probes", len(n.tcpProbes), len(n.udpProbes))
 	return nil
 }
 

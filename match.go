@@ -2,9 +2,10 @@ package gonmap
 
 import (
 	"errors"
-	"github.com/dlclark/regexp2"
 	"regexp"
 	"strings"
+
+	"github.com/dlclark/regexp2"
 )
 
 type versionMate struct {

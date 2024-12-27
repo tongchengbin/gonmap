@@ -1,8 +1,10 @@
 package gonmap
 
 import (
-	"github.com/dlclark/regexp2"
 	"testing"
+
+	"github.com/dlclark/regexp2"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoadNmapServiceProbes(t *testing.T) {
@@ -20,7 +22,7 @@ func TestRegex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	println(m.Groups())
+	assert.True(t, m != nil)
 }
 
 func matchAll(probeList []*probe, banner []byte) *MatchResult {
@@ -63,8 +65,15 @@ func TestProbeMatch(t *testing.T) {
 
 func TestProbeSort(t *testing.T) {
 	probeList := LoadProbes(probes, 9)
+
+	probeList = sortProbes(probeList, 443, true)
+	assert.True(t, len(probeList) > 10)
+	assert.True(t, probeList[0].Name == "GetRequest")
+	assert.True(t, probeList[1].Name == "HTTPOptions")
+
 	probeList = sortProbes(probeList, 443, false)
-	for _, p := range probeList {
-		println(p.Name)
-	}
+	assert.True(t, len(probeList) > 10)
+	assert.True(t, probeList[0].Name == "SSLSessionReq")
+	assert.True(t, probeList[1].Name == "TLSSessionReq")
+
 }

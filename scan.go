@@ -5,12 +5,13 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/projectdiscovery/gologger"
-	"golang.org/x/net/proxy"
 	"io"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/projectdiscovery/gologger"
+	"golang.org/x/net/proxy"
 )
 
 type PortStatus int
@@ -147,9 +148,6 @@ func (n *Nmap) ScanTCP(ctx context.Context, ip string, port int, timeout time.Du
 			response.Status = StatusTcpWrapped
 			return response
 		}
-		if n.option.DebugResponse {
-			gologger.Print().Msgf("Read request from [%s] [%d] (timeout: %s)\n%s", address, code, costTime.String(), FormatBytesToHex(banner))
-		}
 		if code == StatusPortClose || code == StatusConnectTimeout {
 			response.Status = StatusClose
 			statusCheck.SetClose()
@@ -176,6 +174,7 @@ func (n *Nmap) ScanTCP(ctx context.Context, ip string, port int, timeout time.Du
 				continue
 			}
 			finger.Response = banner
+			finger.Service = fixServiceName(finger.Service, isTls)
 			response.Status = StatusMatched
 			response.Tls = isTls
 			response.Service = finger
@@ -331,4 +330,12 @@ func sendProbe(dialer proxy.Dialer, address string, ssl bool, data []byte, timeo
 		}
 
 	}
+}
+
+func fixServiceName(serviceName string, ssl bool) string {
+	if ssl && serviceName == "http" {
+		return "https"
+	}
+	return serviceName
+
 }

@@ -2,9 +2,10 @@ package internal
 
 import (
 	"fmt"
-	"github.com/projectdiscovery/goflags"
 	"io"
 	"os"
+
+	"github.com/projectdiscovery/goflags"
 )
 
 type RunnerOptions struct {
@@ -33,12 +34,13 @@ type RunnerOptions struct {
 func ParseOptions() *RunnerOptions {
 	options := &RunnerOptions{}
 	flagSet := goflags.NewFlagSet()
-	flagSet.SetDescription(`AppFinger is a web application fingerprint scanner.`)
-	flagSet.CreateGroup("AppFinger", "AppFinger",
+	flagSet.SetDescription(`Gonmap is a application fingerprint scanner.`)
+	flagSet.CreateGroup("Gonmap", "Gonmap",
 		flagSet.StringVarP(&options.TargetFile, "url-file", "l", "", "File containing urls to scan"),
 		flagSet.StringSliceVarP(&options.Address, "url", "t", nil, "target url to scan (-u INPUT1 -u INPUT2)", goflags.CommaSeparatedStringSliceOptions),
 		flagSet.IntVar(&options.Threads, "threads", 32, "Number of concurrent threads (default 10)"),
 		flagSet.IntVar(&options.Timeout, "timeout", 10, "Timeout in seconds (default 10)"),
+		flagSet.IntVar(&options.VersionIntensity, "version-intensity", 7, "Version intensity (default 7 max 9)"),
 		flagSet.StringVarP(&options.Proxy, "proxy", "x", "", "HTTP proxy to use for requests (e.g. http://127.0.0.1:7890)"),
 		flagSet.BoolVarP(&options.Stdin, "stdin", "s", false, "Read urls from stdin"),
 		flagSet.StringVarP(&options.ServiceProbes, "finger-home", "sp", "", "finger yaml directory home default is built-in"),
