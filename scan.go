@@ -86,6 +86,16 @@ func (n *Nmap) ScanTimeout(ctx context.Context, protocol Protocol, ip string, po
 	}
 }
 
+func (n *Nmap) ScanProbes(protocol Protocol, address string, timeout time.Duration) (response *Response, err error) {
+	ip, port, err := ParseAddress(address)
+	if err != nil {
+		return nil, err
+	}
+	ctx := context.Background()
+	response = n.ScanTimeout(ctx, protocol, ip, port, timeout, timeout)
+	return response, nil
+}
+
 func (n *Nmap) ScanTCP(ctx context.Context, ip string, port int, timeout time.Duration) (response *Response) {
 	if timeout < time.Duration(1)*time.Second {
 		gologger.Warning().Msgf("timeout too small: %vs", timeout.Seconds())
@@ -104,18 +114,9 @@ func (n *Nmap) ScanTCP(ctx context.Context, ip string, port int, timeout time.Du
 	if 0 == len(probesSorts) {
 		return response
 	}
-	probesSorts = perfSort(port, probesSorts)
 	i := 0
-	// 优化ssl
-	if port == 443 || port == 8443 {
-		//	把ssl probe 放在最前面
-		for _, p := range probesSorts {
-			if p.Name == "TLSSessionReq" || p.Name == "SSLSessionReq" {
-				probesSorts = append([]*probe{p}, probesSorts...)
-			}
-		}
-	}
 	statusCheck := PortStatusCheck{}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -137,6 +138,9 @@ func (n *Nmap) ScanTCP(ctx context.Context, ip string, port int, timeout time.Du
 		}
 		t1 := time.Now()
 		banner, code := n.tcpSend(dialer, address, isTls, pb, timeout)
+		if n.option.DebugResponse {
+			gologger.Print().Msgf("Read request from [%s] [%d] (timeout: %s)\n%s", address, code, time.Now().Sub(t1).String(), FormatBytesToHex(banner))
+		}
 		costTime := time.Now().Sub(t1)
 		// check
 		if len(banner) == 0 && pb.isTcpWrapPossible() && costTime < pb.tcpwrappedms && statusCheck.Open == 0 {
@@ -223,6 +227,9 @@ func (n *Nmap) tcpSend(dialer proxy.Dialer, address string, ssl bool, pb *probe,
 		maxWait = time.Second * 30
 	}
 	ctx, cancel = context.WithTimeout(context.Background(), maxWait)
+	if n.option.VersionTrace {
+		gologger.Debug().Msgf("Service scan sending probe %s to %s (tcp)", pb.Name, address)
+	}
 	defer cancel()
 	data := strings.Replace(pb.sendRaw, "{Host}", address, -1)
 	if n.option.DebugRequest {
@@ -231,6 +238,7 @@ func (n *Nmap) tcpSend(dialer proxy.Dialer, address string, ssl bool, pb *probe,
 	//读取数据
 	socksStatus := &SocketStatus{}
 	done := make(chan bool)
+	defer close(done)
 	// 这里主要控制指纹中的WaitMS
 	go func() {
 		sendProbe(dialer, address, ssl, []byte(data), duration, socksStatus)

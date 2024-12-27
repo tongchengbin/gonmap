@@ -45,7 +45,9 @@ func ParseOptions() *RunnerOptions {
 		flagSet.BoolVarP(&options.UpdateRule, "update-rule", "ur", false, "update rule from github.com/tongchengbin/appfinger"),
 		flagSet.BoolVarP(&options.DisableIcon, "disable-icon", "di", false, "disabled icon request to matcher"),
 		flagSet.BoolVarP(&options.DisableJavaScript, "disable-js", "dj", false, "disabled matcher javascript rule"),
+		flagSet.BoolVar(&options.DebugReq, "debug-req", false, "debug request"),
 		flagSet.BoolVar(&options.DebugResp, "debug-resp", false, "debug response"),
+		flagSet.BoolVar(&options.VersionTrace, "version-trace", false, "version trace"),
 		flagSet.BoolVarP(&options.Version, "version", "v", false, "show version"),
 	)
 	flagSet.CreateGroup("Help", "Help",

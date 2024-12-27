@@ -60,3 +60,11 @@ func TestProbeMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestProbeSort(t *testing.T) {
+	probeList := LoadProbes(probes, 9)
+	probeList = sortProbes(probeList, 443, false)
+	for _, p := range probeList {
+		println(p.Name)
+	}
+}
