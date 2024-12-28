@@ -67,7 +67,7 @@ func (n *Nmap) ScanTimeout(ctx context.Context, protocol Protocol, ip string, po
 	ctx, cancel := context.WithTimeout(ctx, maxTimeout)
 	defer cancel()
 	if port == 53 {
-		protocol = "udp"
+		protocol = UDP
 	}
 	response = &Response{Status: StatusUnknown, Address: fmt.Sprintf("%s:%d", ip, port), Protocol: protocol}
 	go func() {
