@@ -216,38 +216,111 @@ func (n *Nmap) ScanUdp(ctx context.Context, ip string, port int, timeout time.Du
 }
 
 func (n *Nmap) tcpSend(dialer proxy.Dialer, address string, ssl bool, pb *probe, duration time.Duration) ([]byte, PortStatus) {
-	// 这种方法有个好处就是即使读取写入超时 也可以保留已接受数据
-	var ctx context.Context
-	var cancel context.CancelFunc
 	var maxWait time.Duration
 	if pb.totalWaiTms > 0 {
 		maxWait = pb.totalWaiTms
 	} else {
 		maxWait = time.Second * 30
 	}
-	ctx, cancel = context.WithTimeout(context.Background(), maxWait)
+	ctx, cancel := context.WithTimeout(context.Background(), maxWait)
+	defer cancel()
+
 	if n.option.VersionTrace {
 		gologger.Debug().Msgf("Service scan sending probe %s to %s (tcp)", pb.Name, address)
 	}
-	defer cancel()
+
 	data := strings.Replace(pb.sendRaw, "{Host}", address, -1)
 	if n.option.DebugRequest {
 		gologger.Print().Msgf("Send Prob:%s raw|\n%s", pb.Name, FormatBytesToHex([]byte(data)))
 	}
+
 	//读取数据
-	socksStatus := &SocketStatus{}
+	socketStatus := &SocketStatus{}
 	done := make(chan bool)
-	defer close(done)
+
 	// 这里主要控制指纹中的WaitMS
 	go func() {
-		sendProbe(dialer, address, ssl, []byte(data), duration, socksStatus)
+		sendProbe(ctx, dialer, address, ssl, []byte(data), duration, socketStatus)
 		done <- true
+		close(done)
 	}()
+
 	select {
 	case <-done:
-		return socksStatus.data, socksStatus.status
+		return socketStatus.data, socketStatus.status
 	case <-ctx.Done():
-		return socksStatus.data, socksStatus.status
+		return socketStatus.data, socketStatus.status
+	}
+}
+
+func sendProbe(ctx context.Context, dialer proxy.Dialer, address string, ssl bool, data []byte, timeout time.Duration, conStatus *SocketStatus) {
+	conn, err := dialer.Dial("tcp", address)
+	if err != nil {
+		gologger.Debug().Msgf("CreteCon Error:%v", err)
+		conStatus.status = StatusPortClose
+		return
+	}
+	defer conn.Close()
+
+	if ssl {
+		tlsConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+		})
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			gologger.Debug().Msgf("TLS Error:%v", err)
+			conStatus.status = StatusTlsError
+			return
+		}
+		conn = tlsConn
+	}
+
+	if len(data) > 0 {
+		_, err = conn.Write(data)
+		if err != nil {
+			gologger.Debug().Msgf("Write Error:%v", err)
+			conStatus.status = StatusWriteTimeout
+			return
+		}
+	}
+
+	size := 4096
+	var tmp = make([]byte, 1024)
+	var length int
+	for {
+		select {
+		case <-ctx.Done():
+			// 如果已经读取到数据，保持 StatusPortOpen
+			if len(conStatus.data) > 0 {
+				conStatus.status = StatusPortOpen
+			} else {
+				conStatus.status = StatusReadTimeout
+			}
+			return
+		default:
+			if len(conStatus.data) > size {
+				break
+			}
+			err = conn.SetReadDeadline(time.Now().Add(timeout))
+			length, err = conn.Read(tmp)
+			if length > 0 {
+				conStatus.status = StatusPortOpen
+				// 填充数据
+				conStatus.data = append(conStatus.data, tmp[:length]...)
+			}
+			if err == nil {
+				if length > 0 && length < len(tmp) {
+					break
+				}
+			} else if errors.Is(err, io.EOF) {
+				break
+			} else {
+				gologger.Debug().Msgf("Read Error:%v", err)
+				if len(conStatus.data) == 0 {
+					conStatus.status = StatusReadTimeout
+				}
+				break
+			}
+		}
 	}
 }
 
@@ -280,56 +353,6 @@ func udpSend(remoteAddr *net.UDPAddr, data []byte, timeout time.Duration) ([]byt
 		}
 	}
 	return buf, nil
-}
-func sendProbe(dialer proxy.Dialer, address string, ssl bool, data []byte, timeout time.Duration, conStatus *SocketStatus) {
-	conn, err := dialer.Dial("tcp", address)
-	if err != nil {
-		gologger.Debug().Msgf("CreteCon Error:%v", err)
-		conStatus.status = StatusPortClose
-		return
-	}
-	if ssl {
-		conn = tls.Client(conn, &tls.Config{
-			InsecureSkipVerify: true,
-		})
-	}
-	// noinspection GoUnhandledErrorResult
-	defer conn.Close()
-	if len(data) > 0 {
-		_, err = conn.Write(data)
-		if err != nil {
-			gologger.Debug().Msgf("Write Error:%v", err)
-			conStatus.status = StatusWriteTimeout
-			return
-		}
-	}
-	size := 4096
-	var tmp = make([]byte, 1024)
-	var length int
-	for {
-		if len(conStatus.data) > size {
-			break
-		}
-		err = conn.SetReadDeadline(time.Now().Add(timeout))
-		length, err = conn.Read(tmp)
-		if length > 0 {
-			conStatus.status = StatusPortOpen
-		}
-		// 填充数据
-		conStatus.data = append(conStatus.data, tmp[:length]...)
-		if err == nil {
-			if length > 0 && length < len(tmp) {
-				break
-			}
-		} else if errors.Is(err, io.EOF) {
-			break
-		} else {
-			gologger.Debug().Msgf("Read Error:%v", err)
-			conStatus.status = StatusReadTimeout
-			break
-		}
-
-	}
 }
 
 func fixServiceName(serviceName string, ssl bool) string {
