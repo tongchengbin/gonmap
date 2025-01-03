@@ -5,11 +5,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/logrusorgru/aurora"
 	"io"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/logrusorgru/aurora"
 
 	"github.com/projectdiscovery/gologger"
 	"golang.org/x/net/proxy"
@@ -251,14 +252,13 @@ func (n *Nmap) tcpSend(dialer proxy.Dialer, address string, ssl bool, pb *probe,
 	}
 	//读取数据
 	socketStatus := &SocketStatus{}
-	done := make(chan bool)
+	done := make(chan bool, 1)
 	// 这里主要控制指纹中的WaitMS
 	go func() {
 		sendProbe(ctx, dialer, address, ssl, []byte(data), duration, socketStatus)
 		done <- true
 		close(done)
 	}()
-
 	select {
 	case <-done:
 		return socketStatus.data, socketStatus.status
