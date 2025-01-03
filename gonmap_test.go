@@ -1,10 +1,9 @@
 package gonmap
 
 import (
-	"testing"
-
 	"github.com/dlclark/regexp2"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestLoadNmapServiceProbes(t *testing.T) {
@@ -47,8 +46,8 @@ func TestProbeMatch(t *testing.T) {
 	}{
 		{[]byte("HTTP/1.1 200 OK\r\n"), struct{ Service, Version string }{"http", ""}},
 		{[]byte("J\x00\x00\x00\n8.0.36\x00\xb22\x00\x00n\x01Ak\x17\x13i\x1a\x00\xff\xff\xff\x02\x00\xff\xdf\x15\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x12-Y\x15+\x0e`FvR\x038\x00caching_sha2_password\x00"),
-			struct{ Service, Version string }{"mysql", "8.0.36"},
-		}}
+			struct{ Service, Version string }{"mysql", "8.0.36"}},
+	}
 	for _, test := range tests {
 		result := matchAll(probeList, test.input)
 		if result == nil {

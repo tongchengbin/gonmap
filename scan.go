@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/logrusorgru/aurora"
 	"io"
 	"net"
 	"strings"
@@ -20,10 +21,25 @@ const (
 	StatusPortOpen  PortStatus = iota
 	StatusPortClose PortStatus = iota
 	StatusTlsError
-	StatusConnectTimeout
 	StatusWriteTimeout
 	StatusReadTimeout
 )
+
+func (c PortStatus) String() string {
+	switch c {
+	case StatusPortOpen:
+		return "Open"
+	case StatusPortClose:
+		return "Close"
+	case StatusTlsError:
+		return "TLS Error"
+	case StatusWriteTimeout:
+		return "Write Timeout"
+	case StatusReadTimeout:
+		return "Read Timeout"
+	}
+	return "Unknown"
+}
 
 type PortStatusCheck struct {
 	Close int
@@ -31,14 +47,13 @@ type PortStatusCheck struct {
 }
 
 func (p *PortStatusCheck) SetOpen() {
-	p.Close = 0
 	p.Open++
 }
 func (p *PortStatusCheck) SetClose() {
 	p.Close++
 }
 func (p *PortStatusCheck) IsClose() bool {
-	if p.Open == 0 && p.Close > 3 {
+	if p.Open == 0 && p.Close >= 2 {
 		return true
 	}
 	return false
@@ -140,7 +155,7 @@ func (n *Nmap) ScanTCP(ctx context.Context, ip string, port int, timeout time.Du
 		t1 := time.Now()
 		banner, code := n.tcpSend(dialer, address, isTls, pb, timeout)
 		if n.option.DebugResponse {
-			gologger.Print().Msgf("Read request from [%s] [%d] (timeout: %s)\n%s", address, code, time.Now().Sub(t1).String(), FormatBytesToHex(banner))
+			gologger.Print().Msgf("Read request from [%s] [%s] (timeout: %s)\n%s", address, aurora.Cyan(code.String()), time.Now().Sub(t1).String(), FormatBytesToHex(banner))
 		}
 		costTime := time.Now().Sub(t1)
 		// check
@@ -148,11 +163,11 @@ func (n *Nmap) ScanTCP(ctx context.Context, ip string, port int, timeout time.Du
 			response.Status = StatusTcpWrapped
 			return response
 		}
-		if code == StatusPortClose || code == StatusConnectTimeout {
-			response.Status = StatusClose
+		if code == StatusPortClose {
 			statusCheck.SetClose()
 			if statusCheck.IsClose() {
-				break
+				response.Status = StatusClose
+				return response
 			}
 			continue
 		} else if code == StatusTlsError {
@@ -222,22 +237,21 @@ func (n *Nmap) tcpSend(dialer proxy.Dialer, address string, ssl bool, pb *probe,
 	} else {
 		maxWait = time.Second * 30
 	}
+	if duration > maxWait {
+		duration = maxWait
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), maxWait)
 	defer cancel()
-
 	if n.option.VersionTrace {
 		gologger.Debug().Msgf("Service scan sending probe %s to %s (tcp)", pb.Name, address)
 	}
-
 	data := strings.Replace(pb.sendRaw, "{Host}", address, -1)
 	if n.option.DebugRequest {
-		gologger.Print().Msgf("Send Prob:%s raw|\n%s", pb.Name, FormatBytesToHex([]byte(data)))
+		gologger.Print().Msgf("Send Prob:%s raw\n%s", pb.Name, FormatBytesToHex([]byte(data)))
 	}
-
 	//读取数据
 	socketStatus := &SocketStatus{}
 	done := make(chan bool)
-
 	// 这里主要控制指纹中的WaitMS
 	go func() {
 		sendProbe(ctx, dialer, address, ssl, []byte(data), duration, socketStatus)
@@ -261,7 +275,6 @@ func sendProbe(ctx context.Context, dialer proxy.Dialer, address string, ssl boo
 		return
 	}
 	defer conn.Close()
-
 	if ssl {
 		tlsConn := tls.Client(conn, &tls.Config{
 			InsecureSkipVerify: true,
@@ -273,7 +286,6 @@ func sendProbe(ctx context.Context, dialer proxy.Dialer, address string, ssl boo
 		}
 		conn = tlsConn
 	}
-
 	if len(data) > 0 {
 		_, err = conn.Write(data)
 		if err != nil {
@@ -282,7 +294,6 @@ func sendProbe(ctx context.Context, dialer proxy.Dialer, address string, ssl boo
 			return
 		}
 	}
-
 	size := 4096
 	var tmp = make([]byte, 1024)
 	var length int
@@ -298,27 +309,34 @@ func sendProbe(ctx context.Context, dialer proxy.Dialer, address string, ssl boo
 			return
 		default:
 			if len(conStatus.data) > size {
-				break
+				return
 			}
 			err = conn.SetReadDeadline(time.Now().Add(timeout))
 			length, err = conn.Read(tmp)
+			if err != nil {
+				gologger.Debug().Msgf("Read Error:%v", err)
+			}
 			if length > 0 {
 				conStatus.status = StatusPortOpen
 				// 填充数据
 				conStatus.data = append(conStatus.data, tmp[:length]...)
+				if length < len(tmp) {
+					return
+				}
+				continue
 			}
 			if err == nil {
 				if length > 0 && length < len(tmp) {
-					break
+					return
 				}
 			} else if errors.Is(err, io.EOF) {
-				break
+				return
 			} else {
 				gologger.Debug().Msgf("Read Error:%v", err)
 				if len(conStatus.data) == 0 {
 					conStatus.status = StatusReadTimeout
 				}
-				break
+				return
 			}
 		}
 	}
